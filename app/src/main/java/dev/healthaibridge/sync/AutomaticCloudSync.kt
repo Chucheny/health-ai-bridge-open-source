@@ -7,8 +7,15 @@ import androidx.health.connect.client.permission.HealthPermission
 import androidx.work.*
 import dev.healthaibridge.Metric
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.time.Instant
 import java.util.concurrent.TimeUnit
 
 object BackgroundReadAccess {
@@ -38,10 +45,32 @@ suspend fun executeCloudSync(context: Context, background: Boolean,
         }).run(background)
 }
 
+internal data class AutomaticWorkSchedule(
+    val state: WorkInfo.State,
+    val runAttemptCount: Int,
+    val earliestEligibleAt: Instant?,
+)
+
+internal fun WorkInfo.earliestEligibleAt(): Instant? =
+    nextScheduleTimeMillis.takeIf { state == WorkInfo.State.ENQUEUED && it > 0L && it != Long.MAX_VALUE }
+        ?.let(Instant::ofEpochMilli)
+
+internal fun automaticWorkSchedule(infos: List<WorkInfo>): AutomaticWorkSchedule? =
+    infos.singleOrNull { !it.state.isFinished && it.periodicityInfo != null }?.let {
+        AutomaticWorkSchedule(it.state, it.runAttemptCount, it.earliestEligibleAt())
+    }
+
 object AutomaticSyncScheduler {
     const val WORK_NAME = "health-ai-bridge-automatic-sync-v1"
     private val lock = Mutex()
     fun cancel(context: Context): Operation = WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+
+    internal fun observeSchedule(context: Context): Flow<AutomaticWorkSchedule?> = flow {
+        emitAll(WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(WORK_NAME).map(::automaticWorkSchedule))
+    }.catch {
+        if (it is CancellationException || it !is Exception) throw it
+        emit(null)
+    }.distinctUntilChanged()
 
     suspend fun reconcile(context: Context) = lock.withLock {
         val store = EncryptedCloudSettings.forApp(context, createKeyIfMissing = false)

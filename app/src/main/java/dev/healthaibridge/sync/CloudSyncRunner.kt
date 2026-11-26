@@ -8,13 +8,14 @@ import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 
 object AutomaticSyncStatus {
-    val values = setOf("enabled", "disabled", "running", "complete", "retry", "permission",
+    val values = setOf("enabled", "disabled", "running", "complete", "retry", "pending_pages", "permission",
         "authentication", "reconciliation", "conflict", "rejected", "paused")
     fun label(value: String?): String = when (value) {
         "enabled" -> "已启用，等待系统安排联网任务"
         "running" -> "上次后台尝试尚未获得完整确认"
         "complete" -> "上次后台同步已收到完整云端确认"
-        "retry" -> "待传数据已保留，等待系统联网重试"
+        "retry" -> "上次同步未获完整确认，已保留进度，等待自动重试"
+        "pending_pages" -> "还有数据分页待同步，已保留进度，等待下次继续"
         "permission" -> "后台功能或读取权限不可用，自动同步已关闭"
         "authentication" -> "凭据或权限不足，自动同步已关闭"
         "reconciliation" -> "增量游标需核对恢复，自动同步已关闭"
@@ -71,7 +72,9 @@ class CloudSyncRunner(
                         SyncOutcome.AUTHENTICATION_REQUIRED -> "authentication"
                         SyncOutcome.RECONCILIATION_REQUIRED -> "reconciliation"
                         SyncOutcome.CONFLICT -> "conflict"
-                        else -> if (retry) "retry" else "rejected"
+                        SyncOutcome.RETRY_REQUIRED -> "retry"
+                        SyncOutcome.MORE_PENDING -> "pending_pages"
+                        else -> "rejected"
                     }
                     settings.update { current ->
                         if (current.configuration?.namespace() != namespace || !current.automaticEnabled) current

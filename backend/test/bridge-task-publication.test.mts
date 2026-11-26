@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { lstat, mkdtemp, readFile, readdir, rmdir, unlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inspectImportTask, listImportTasks, prepareImportTask, selectImportTaskQueries, uploadImportTask } from '../bridge-import-tasks.mts';
@@ -13,15 +12,8 @@ const parent = fileURLToPath(new URL('../../private/bridge-imports/', import.met
 const cli = fileURLToPath(new URL('../bridge-command.mts', import.meta.url));
 const hook = new URL('./support/bridge-task-fault-hook.mts', import.meta.url).href;
 
-async function existingTaskEntries(): Promise<string[]> {
-  return readdir(parent).catch((error): string[] => {
-    if (error.code === 'ENOENT') return [];
-    throw error;
-  });
-}
-
 test('new tasks are published only after a complete validated file is saved, with legacy catalog and inspect semantics', async () => {
-  const before = await existingTaskEntries(), jobs: string[] = [];
+  const before = await readdir(parent), jobs: string[] = [];
   try {
     for (const kind of ['sleep', 'activity'] as const) {
       const task = await prepareImportTask(kind, kind === 'sleep' ? syntheticSleepBatch().capture : syntheticActivityBatch().records, auditWindow);
@@ -37,12 +29,12 @@ test('new tasks are published only after a complete validated file is saved, wit
 });
 
 test('partial write, sync and publication failures preserve evidence outside task catalog and cannot upload or select queries', async () => {
-  const temporary = await mkdtemp(join(tmpdir(), 'hab-bridge-publication-'));
+  const temporary = await mkdtemp(fileURLToPath(new URL('../../.tools/bridge-publication-', import.meta.url)));
   const file = join(temporary, 'synthetic-input.json');
   const source = JSON.stringify(syntheticActivityBatch().records); await writeFile(file, source);
   try {
     for (const fault of ['write', 'sync', 'publish']) {
-      const before = await existingTaskEntries(); let leftovers: string[] = [];
+      const before = await readdir(parent); let leftovers: string[] = [];
       try {
         const result = spawnSync(process.execPath, ['--import', hook, cli, 'prepare', 'activity', file, auditWindow.start, auditWindow.end],
           { encoding: 'utf8', timeout: 15000, env: { ...process.env, HAB_SYNTHETIC_TASK_FAULT: fault } });

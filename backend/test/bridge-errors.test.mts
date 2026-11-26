@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, rmdir, unlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bridgeCommandError } from '../bridge-errors.mts';
@@ -17,7 +16,8 @@ const tasks = fileURLToPath(new URL('../../private/bridge-imports/', import.meta
 const marker = 'synthetic-private-text-that-must-never-be-displayed';
 
 test('actual CLI classifies missing, malformed, invalid UTF-8 and oversized input without echoing private text or creating tasks', async () => {
-  const temporary = await mkdtemp(join(tmpdir(), 'hab-bridge-errors-'));
+  await mkdir(new URL('../../.tools/', import.meta.url), { recursive: true });
+  const temporary = await mkdtemp(fileURLToPath(new URL('../../.tools/bridge-errors-', import.meta.url)));
   const before = await readdir(tasks).catch(e => { if (e.code === 'ENOENT') return []; throw e; });
   const files = ['broken.json', 'encoding.json', 'large.json'].map(name => join(temporary, name));
   try {

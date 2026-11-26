@@ -27,9 +27,6 @@ fun workStateDiagnosticJson(info: WorkInfo, previousStopReason: Int?): JsonObjec
     addProperty("state", info.state.name)
     addProperty("runAttemptCount", info.runAttemptCount)
     // This is an eligibility time, never a promise that Android will execute then.
-    val earliest = info.nextScheduleTimeMillis.takeIf {
-        info.state == WorkInfo.State.ENQUEUED && it >= 0 && it != Long.MAX_VALUE
-    }
-    add("earliestEligibleAt", earliest?.let { JsonPrimitive(Instant.ofEpochMilli(it).toString()) } ?: JsonNull.INSTANCE)
+    add("earliestEligibleAt", info.earliestEligibleAt()?.let { JsonPrimitive(it.toString()) } ?: JsonNull.INSTANCE)
     add("previousStopReason", previousStopReason?.let(::JsonPrimitive) ?: JsonNull.INSTANCE)
 }

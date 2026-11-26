@@ -55,11 +55,11 @@ class CloudSyncRunnerTest {
         assertEquals(next,memory.value.lastSuccess)
     }
     @Test fun networkAndPagingRetryPreserveSuccessAndAutomaticConsent() = runBlocking {
-        for (outcome in listOf(SyncOutcome.RETRY_REQUIRED,SyncOutcome.MORE_PENDING)) {
+        for ((outcome, status) in mapOf(SyncOutcome.RETRY_REQUIRED to "retry", SyncOutcome.MORE_PENDING to "pending_pages")) {
             val memory=Memory(active()); var calls=0
             assertEquals(outcome,runner(memory) {_,_,_->calls++;outcome}.run(true).outcome)
             assertEquals(1,calls); assertTrue(memory.value.automaticEnabled)
-            assertEquals("retry",memory.value.automaticStatus)
+            assertEquals(status,memory.value.automaticStatus)
             assertEquals(prior,memory.value.lastSuccess)
             assertEquals(prior,memory.value.lastAutomaticSuccess)
         }

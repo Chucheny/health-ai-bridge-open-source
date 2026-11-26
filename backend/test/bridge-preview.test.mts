@@ -1,8 +1,7 @@
-import { test } from 'node:test';
+import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, readdir, rmdir, unlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, mkdtemp, readFile, readdir, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { previewBridgeImport } from '../bridge-import.mts';
@@ -12,6 +11,7 @@ import { auditWindow, createSyntheticFixture, syntheticActivityBatch, syntheticS
 const cli = fileURLToPath(new URL('../bridge-command.mts', import.meta.url));
 const tasks = fileURLToPath(new URL('../../private/bridge-imports/', import.meta.url));
 const marker = 'synthetic-source-text-must-not-appear-in-preview';
+before(() => mkdir(new URL('../../.tools/', import.meta.url), { recursive: true }));
 async function ids() { return readdir(tasks).catch(e => { if (e.code === 'ENOENT') return []; throw e; }); }
 function capture(records: unknown[], window = auditWindow) {
   return { schemaVersion: 1, source: 'huawei_trainingcamp', kind: 'activity', requestedWindow: window,
@@ -24,7 +24,7 @@ function command(action: string, kind: string, file: string, extra: string[] = [
 
 test('multiple exercise captures preview and create one task with over 20 records, including a shared overnight exercise only once', async () => {
   const c = await createSyntheticFixture();
-  const temporary = await mkdtemp(join(tmpdir(), 'hab-bridge-preview-'));
+  const temporary = await mkdtemp(fileURLToPath(new URL('../../.tools/bridge-preview-', import.meta.url)));
   const files = [join(temporary, '合成 运动一.json'), join(temporary, '合成 运动二.json')];
   const first = { start: auditWindow.start, end: '2026-01-02T02:00:00Z' };
   const second = { start: '2026-01-01T22:00:00Z', end: auditWindow.end };
@@ -155,7 +155,7 @@ test('read-only preview uses original validation for every input format and expo
 });
 
 test('actual preview CLI leaves input and task catalog untouched on repeat, validation failure and malformed commands', async () => {
-  const temporary = await mkdtemp(join(tmpdir(), 'hab-bridge-preview-'));
+  const temporary = await mkdtemp(fileURLToPath(new URL('../../.tools/bridge-preview-', import.meta.url)));
   const file = join(temporary, 'synthetic.json'), before = await ids();
   try {
     for (const [kind, input] of [['sleep', syntheticSleepBatch().capture], ['activity', capture(syntheticActivityBatch().records)]] as const) {
@@ -187,7 +187,7 @@ test('actual preview CLI leaves input and task catalog untouched on repeat, vali
 
 test('prepare rereads a changed file after preview and completes the original task/REST/phone/MCP path with the newly validated contents', async () => {
   const c = await createSyntheticFixture();
-  const temporary = await mkdtemp(join(tmpdir(), 'hab-bridge-preview-')), file = join(temporary, 'synthetic.json');
+  const temporary = await mkdtemp(fileURLToPath(new URL('../../.tools/bridge-preview-', import.meta.url))), file = join(temporary, 'synthetic.json');
   let id: string | undefined;
   try {
     const original = syntheticActivityBatch().records; await writeFile(file, JSON.stringify(original));

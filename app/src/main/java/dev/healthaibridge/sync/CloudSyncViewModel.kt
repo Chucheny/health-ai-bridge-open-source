@@ -150,7 +150,7 @@ class CloudSyncViewModel(app: Application) : AndroidViewModel(app) {
                 if (result != SyncOutcome.COMPLETE) {
                         publish(when (result) {
                             SyncOutcome.MORE_PENDING -> "${metric?.label ?: "数据"}仍有分页待传；再次点击立即同步可继续"
-                            SyncOutcome.RETRY_REQUIRED -> "网络暂不可用，待传批次已加密保存；联网后点击立即同步重试"
+                            SyncOutcome.RETRY_REQUIRED -> "同步未收到完整确认，进度已保留。稍后可点击立即同步续传"
                             SyncOutcome.CONSENT_REQUIRED -> "${metric?.label ?: "数据"}未获读取或上传授权；请在原连接页授权后重试"
                             SyncOutcome.AUTHENTICATION_REQUIRED -> "上传凭据无效或权限不足，未继续上传"
                             SyncOutcome.RECONCILIATION_REQUIRED -> "增量游标已过期，需核对恢复；未重置游标或重新上传全部历史"

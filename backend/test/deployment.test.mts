@@ -4,9 +4,9 @@ import type { Context } from '@netlify/functions';
 import health, { config } from '../../netlify/functions/health.mts';
 import { WEB_IMPORT_ROUTES } from '../bridge-sources.mts';
 
-test('Netlify declares all Training Camp routes accepted by the health handler', () => {
+test('Netlify declares receipt recovery and all Training Camp routes accepted by the health handler', () => {
   assert(Array.isArray(config.path));
-  for (const path of [...Object.values(WEB_IMPORT_ROUTES), '/api/health/trainingcamp/sleep/snapshots'] as const) {
+  for (const path of ['/api/health/sync/receipt', ...Object.values(WEB_IMPORT_ROUTES), '/api/health/trainingcamp/sleep/snapshots'] as const) {
     assert(config.path.includes(path), `Missing Netlify route: ${path}`);
   }
 });

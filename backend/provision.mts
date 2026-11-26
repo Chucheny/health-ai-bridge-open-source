@@ -39,7 +39,7 @@ try {
     await writeFile(file, JSON.stringify({ schemaVersion: 1, baseUrl: url.origin, ownerId: owner, sourceId: source,
       token, allowedTypes: types }, null, 2), { flag: 'wx', mode: 0o600 });
   });
-  console.log('Device credential saved under private/. No secret was printed. Android import is not yet implemented.');
+  console.log('Device credential saved under private/. Use its config.json with the local import workbench.');
 } catch {
   console.error('Provisioning did not complete. Check the private configuration and database setup; no raw error or secret was logged.');
   process.exitCode = 1;

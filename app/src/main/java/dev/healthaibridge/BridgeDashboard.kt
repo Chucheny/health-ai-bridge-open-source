@@ -12,9 +12,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.work.WorkInfo
+import dev.healthaibridge.sync.AutomaticSyncScheduler
 import dev.healthaibridge.sync.AutomaticSyncStatus
 import dev.healthaibridge.sync.CloudViewState
 
@@ -33,6 +37,12 @@ import dev.healthaibridge.sync.CloudViewState
 }
 
 @Composable internal fun AutomaticSyncCard(state: CloudViewState, onToggle: () -> Unit, onRefresh: () -> Unit) {
+    val showSchedule = state.storageReady && state.automaticEnabled
+    val schedule = if (showSchedule) {
+        val appContext = LocalContext.current.applicationContext
+        remember(appContext) { AutomaticSyncScheduler.observeSchedule(appContext) }
+            .collectAsStateWithLifecycle(initialValue = null).value
+    } else null
     val canToggle = state.storageReady && !state.busy && (state.automaticEnabled ||
         (state.configured && state.selected.isNotEmpty() && state.pendingAction == null && state.backgroundAvailable))
     BridgeCard {
@@ -52,7 +62,31 @@ import dev.healthaibridge.sync.CloudViewState
             Icon(if (state.automaticStatus == "complete") Icons.Outlined.CheckCircle else Icons.Outlined.Info,
                 null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(if (state.storageReady) AutomaticSyncStatus.label(state.automaticStatus) else "正在读取本机状态…", style = MaterialTheme.typography.bodySmall)
+                val status = when {
+                    !state.storageReady -> "正在读取本机状态…"
+                    schedule?.state == WorkInfo.State.RUNNING -> "系统后台任务正在运行"
+                    schedule?.state == WorkInfo.State.ENQUEUED && schedule.runAttemptCount == 0 -> "等待系统安排下一轮同步"
+                    else -> AutomaticSyncStatus.label(state.automaticStatus)
+                }
+                Text(status, style = MaterialTheme.typography.bodySmall)
+                if (showSchedule) {
+                    val timing = when (schedule?.state) {
+                        WorkInfo.State.RUNNING -> null
+                        WorkInfo.State.ENQUEUED -> schedule.earliestEligibleAt?.let {
+                            val label = if (schedule.runAttemptCount > 0) "最早可重试" else "最早可运行"
+                            "$label · ${syncTime(it.toString(), compact = true)}"
+                        } ?: "系统已排队，运行时间暂不可用"
+                        WorkInfo.State.BLOCKED -> "任务暂不可运行，等待系统安排"
+                        else -> "系统任务状态暂不可用"
+                    }
+                    timing?.let {
+                        Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (schedule != null && schedule.runAttemptCount > 0) {
+                        Text("本轮尝试 · ${schedule.runAttemptCount} 次", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 Text("后台完整确认 · ${syncTime(state.lastAutomaticSuccess, compact = true)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = onRefresh, enabled = state.storageReady) {

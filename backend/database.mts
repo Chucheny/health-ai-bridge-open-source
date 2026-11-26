@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { ApiError, batchHash, bounds, cursor, hash, HEALTH_SYNC_ORIGIN, instantFromNs, ns } from './protocol.mts';
-import type { Batch, HealthRecord, Query } from './protocol.mts';
+import type { Batch, HealthRecord, Query, SyncReceiptSelector } from './protocol.mts';
 import { canSplitQuery } from './query-errors.mts';
 
 export interface Sql { query(sql: string, params?: any[]): Promise<{ rows: any[] }> }
@@ -115,10 +115,19 @@ async function applyOperations(sql: Sql,p: Principal,batch: Batch){
   }
   await flush();
 }
-export async function sync(sql: Sql, p: Principal, batch: Batch) {
+export async function syncReceipt(sql: Sql, p: Principal, selector: SyncReceiptSelector) {
+  requireScope(p, 'sync', selector.recordType);
+  const row = (await sql.query(`SELECT receipt - 'recovery' AS receipt FROM health_bridge.sync_batches
+    WHERE owner_id=$1 AND source_id=$2 AND batch_id=$3 AND receipt->>'committed'='true'
+    AND receipt->>'sequence'=$4 AND receipt->'recovery'->>'recordType'=$5
+    AND receipt->'recovery'->>'contentSha256'=$6`,
+    [p.owner, p.source, selector.batchId, String(selector.sequence), selector.recordType, selector.contentSha256])).rows[0];
+  return row?.receipt ?? null;
+}
+export async function sync(sql: Sql, p: Principal, batch: Batch, contentSha256?: string) {
   requireScope(p, 'sync', batch.recordType);
   const requestHash = batchHash(batch);
-  const old = (await sql.query(`SELECT request_hash,receipt FROM health_bridge.sync_batches
+  const old = (await sql.query(`SELECT request_hash,receipt - 'recovery' AS receipt FROM health_bridge.sync_batches
     WHERE owner_id=$1 AND source_id=$2 AND batch_id=$3`, [p.owner, p.source, batch.batchId])).rows[0];
   if (old) {
     if (old.request_hash !== requestHash) throw new ApiError(409, 'batch_content_conflict');
@@ -130,6 +139,9 @@ export async function sync(sql: Sql, p: Principal, batch: Batch) {
   await applyOperations(sql,p,batch);
   const receipt = { batchId: batch.batchId, sequence: batch.sequence, committed: true,
     committedAt: new Date().toISOString(), operationCount: batch.operations.length };
+  const storedReceipt = contentSha256
+    ? { ...receipt, recovery: { recordType: batch.recordType, contentSha256 } }
+    : receipt;
   // authenticate holds the owner lock. Persist the checkpoint and its receipt
   // together so that even an empty Changes page needs fewer database round trips.
   await sql.query(`WITH checkpoint AS (
@@ -142,7 +154,7 @@ export async function sync(sql: Sql, p: Principal, batch: Batch) {
     INSERT INTO health_bridge.sync_batches (owner_id,source_id,batch_id,request_hash,receipt)
     SELECT owner_id,source_id,$6,$7,$8::jsonb FROM checkpoint`,
     [p.owner, p.source, batch.recordType, batch.sequence, receipt.committedAt,
-      batch.batchId, requestHash, JSON.stringify(receipt)]);
+      batch.batchId, requestHash, JSON.stringify(storedReceipt)]);
   return receipt;
 }
 const selection = `r.owner_id=$1 AND r.record_type=$2 AND NOT r.deleted AND

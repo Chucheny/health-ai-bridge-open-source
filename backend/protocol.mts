@@ -70,6 +70,15 @@ export const batchSchema = z.strictObject({ schemaVersion: z.literal(1), batchId
   ])).max(100),
 });
 export type Batch = z.infer<typeof batchSchema>;
+const syncReceiptSchema = batchSchema.pick({ batchId: true, recordType: true, sequence: true }).extend({
+  contentSha256: z.string().regex(/^[0-9a-f]{64}$/),
+});
+export type SyncReceiptSelector = z.infer<typeof syncReceiptSchema>;
+export function parseSyncReceiptSelector(input: unknown): SyncReceiptSelector {
+  const parsed = syncReceiptSchema.safeParse(input);
+  if (!parsed.success) throw new ApiError(400, 'invalid_receipt_selector');
+  return parsed.data;
+}
 
 // Preserve Health Connect Instant nanoseconds; Date is used only for whole seconds.
 export function ns(value: string): bigint {
@@ -128,7 +137,7 @@ function canonical(value: unknown): string {
     .map(([k, v]) => JSON.stringify(k) + ':' + canonical(v)).join(',') + '}';
   return JSON.stringify(value);
 }
-export const hash = (s: string) => createHash('sha256').update(s).digest('hex');
+export const hash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 export const contentHash = (value: unknown) => hash(canonical(value));
 export const batchHash = (batch: Batch) => contentHash(batch);
 

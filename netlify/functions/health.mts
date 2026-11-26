@@ -25,6 +25,6 @@ export default async (req: Request, context: Context) => {
     return await handler(req);
   } catch { return reply({ error: 'temporarily_unavailable' }, 503); }
 };
-export const config: Config = { path: ['/api/health/sync', '/api/health/status', '/api/health/records',
+export const config: Config = { path: ['/api/health/sync', '/api/health/sync/receipt', '/api/health/status', '/api/health/records',
   '/api/health/summary', '/api/health/revoke', '/api/health/data', '/api/health/trainingcamp/import',
   '/api/health/trainingcamp/sleep/import', '/api/health/trainingcamp/sleep/snapshots'] };

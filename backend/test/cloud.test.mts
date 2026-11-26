@@ -82,6 +82,44 @@ test('same batch replay returns identical receipt; changed content conflicts; no
   assert.equal((await request('summary' + range())).body.bySource[0].sample_count, '3');
   assert.equal((await request('status')).body.streams[0].sequence, '1');
 });
+test('receipt lookup confirms exact uploaded bytes within the original device scope and leaves records unchanged', async () => {
+  await setup(['sync']);
+  const submitted = batch(heart());
+  const selector = { batchId: submitted.batchId, recordType: submitted.recordType,
+    sequence: submitted.sequence, contentSha256: hash(JSON.stringify(submitted)) };
+  assert.deepEqual((await request('sync/receipt', selector)).body, { receipt: null });
+  const upload = await request('sync', submitted);
+  assert.equal(upload.status, 200);
+  assert.equal(upload.body.recovery, undefined);
+  const found = await request('sync/receipt', selector);
+  assert.equal(found.status, 200);
+  assert.deepEqual(found.body, { receipt: upload.body });
+  assert.match(found.headers.get('cache-control')!, /no-store/);
+  assert.deepEqual((await request('sync', submitted)).body, upload.body);
+  for (const changed of [{ sequence: 2 }, { recordType: 'StepsRecord' }, { contentSha256: hash('other bytes') }]) {
+    assert.deepEqual((await request('sync/receipt', { ...selector, ...changed })).body, { receipt: null });
+  }
+  const alternate = randomBytes(32).toString('base64url');
+  await credential(alternate, owner, randomUUID(), ['sync']);
+  assert.deepEqual((await request('sync/receipt', selector, alternate)).body, { receipt: null });
+  const reader = randomBytes(32).toString('base64url');
+  await credential(reader, owner, source, ['read']);
+  assert.equal((await request('sync/receipt', selector, reader)).status, 403);
+  const typeRestricted = randomBytes(32).toString('base64url');
+  await credential(typeRestricted, owner, source, ['sync'], ['StepsRecord']);
+  assert.equal((await request('sync/receipt', selector, typeRestricted)).status, 403);
+  assert.equal((await request('sync/receipt', selector, null)).status, 401);
+  assert.equal((await request('sync/receipt', { ...selector, authority: owner })).status, 400);
+  assert.equal((await request('sync/receipt', { ...selector, extra: 'x'.repeat(512) })).status, 413);
+  // Simulate a receipt written before raw-byte proof was added.
+  await pg.query("UPDATE health_bridge.sync_batches SET receipt=receipt-'recovery' WHERE owner_id=$1 AND source_id=$2", [owner, source]);
+  assert.deepEqual((await request('sync/receipt', selector)).body, { receipt: null });
+  assert.deepEqual((await request('sync', submitted)).body, upload.body);
+  const records = await pg.query<{ count: number }>(
+    'SELECT count(*)::int AS count FROM health_bridge.health_records WHERE owner_id=$1', [owner],
+  );
+  assert.equal(records.rows[0]?.count, 1);
+});
 test('page batches commit in order; lost response resumes original batch before next sequence', async () => {
   await setup(); const a = batch(heart()); const b = batch(heart(), 2);
   assert.equal((await request('sync', b)).body.error, 'sequence_conflict');

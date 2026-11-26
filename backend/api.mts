@@ -1,5 +1,5 @@
-import { ApiError, parseBatch, parseQuery } from './protocol.mts';
-import { authenticate, records, requireScope, summary, sync } from './database.mts';
+import { ApiError, hash, parseBatch, parseQuery, parseSyncReceiptSelector } from './protocol.mts';
+import { authenticate, records, requireScope, summary, sync, syncReceipt } from './database.mts';
 import type { Database } from './database.mts';
 import { parseTrainingCampJson } from './trainingcamp-semantics.mts';
 import { WEB_IMPORT_ROUTES } from './bridge-sources.mts';
@@ -12,10 +12,9 @@ export const reply = (body: unknown, status = 200) => Response.json(body, { stat
   'Cache-Control': 'no-store, private', 'Pragma': 'no-cache', 'X-Content-Type-Options': 'nosniff',
   'Strict-Transport-Security': 'max-age=31536000',
 } });
-async function jsonBody(req: Request, lossless = false): Promise<unknown> {
+async function jsonBody(req: Request, lossless: boolean, max = 2 * 1024 * 1024) {
   if (req.headers.get('content-type')?.split(';')[0].trim() !== 'application/json') throw new ApiError(415, 'json_required');
   if (req.headers.has('content-encoding')) throw new ApiError(415, 'encoding_not_supported');
-  const max = 2 * 1024 * 1024;
   if (Number(req.headers.get('content-length') ?? 0) > max) throw new ApiError(413, 'batch_too_large');
   const reader = req.body?.getReader();
   if (!reader) throw new ApiError(400, 'invalid_json');
@@ -30,8 +29,10 @@ async function jsonBody(req: Request, lossless = false): Promise<unknown> {
     }
   } finally { reader.releaseLock(); }
   try {
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
-    return lossless ? parseTrainingCampJson(text) : JSON.parse(text);
+    const bytes = Buffer.concat(chunks);
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    const value: unknown = lossless ? parseTrainingCampJson(text) : JSON.parse(text);
+    return { value, bytes };
   }
   catch { throw new ApiError(400, 'invalid_json'); }
 }
@@ -43,7 +44,8 @@ export function createHandler(db: Database, onSchemaRejected?: (fields: string[]
       if (url.protocol !== 'https:') throw new ApiError(400, 'https_required');
       if (url.username || url.password || url.searchParams.has('token') || url.searchParams.has('access_token')) throw new ApiError(400, 'invalid_url');
       const routes: Record<string, string> = {
-        '/api/health/sync': 'POST', '/api/health/status': 'GET', '/api/health/records': 'GET',
+        '/api/health/sync': 'POST', '/api/health/sync/receipt': 'POST',
+        '/api/health/status': 'GET', '/api/health/records': 'GET',
         '/api/health/summary': 'GET', '/api/health/revoke': 'POST', '/api/health/data': 'DELETE',
       };
       if (options.trainingCampEnabled) {
@@ -55,7 +57,13 @@ export function createHandler(db: Database, onSchemaRejected?: (fields: string[]
       if (req.method !== routes[path]) throw new ApiError(405, 'method_not_allowed');
       // Read a bounded body before opening a transaction (avoids slow-client DB locks).
       const importing = path === WEB_IMPORT_ROUTES.activity || path === WEB_IMPORT_ROUTES.sleep;
-      const input = path.endsWith('/sync') || importing ? await jsonBody(req, importing) : undefined;
+      const uploading = path === '/api/health/sync';
+      const lookingUpReceipt = path === '/api/health/sync/receipt';
+      const input = uploading || importing || lookingUpReceipt
+        ? await jsonBody(req, importing, lookingUpReceipt ? 512 : undefined)
+        : undefined;
+      const receiptSelector = lookingUpReceipt ? parseSyncReceiptSelector(input?.value) : undefined;
+      const wireHash = uploading && input ? hash(input.bytes) : undefined;
       const source = url.searchParams.get('source') ?? 'health_sync';
       if (path.endsWith('/records') || path.endsWith('/summary')) {
         if (!['health_sync', TRAININGCAMP_SOURCE].includes(source)) throw new ApiError(400, 'invalid_source');
@@ -66,9 +74,12 @@ export function createHandler(db: Database, onSchemaRejected?: (fields: string[]
       const body = await db.transaction(async sql => {
         const p = await authenticate(sql, req.headers.get('authorization'));
         switch (path) {
-          case '/api/health/sync': return sync(sql, p, parseBatch(input));
-          case WEB_IMPORT_ROUTES.activity: return importTrainingCampActivities(sql, p, parseTrainingCampImport(input));
-          case WEB_IMPORT_ROUTES.sleep: return importTrainingCampSleep(sql, p, parseTrainingCampSleepImport(input));
+          case '/api/health/sync': return sync(sql, p, parseBatch(input?.value), wireHash);
+          case '/api/health/sync/receipt':
+            if (!receiptSelector) throw new ApiError(400, 'invalid_receipt_selector');
+            return { receipt: await syncReceipt(sql, p, receiptSelector) };
+          case WEB_IMPORT_ROUTES.activity: return importTrainingCampActivities(sql, p, parseTrainingCampImport(input?.value));
+          case WEB_IMPORT_ROUTES.sleep: return importTrainingCampSleep(sql, p, parseTrainingCampSleepImport(input?.value));
           case '/api/health/trainingcamp/sleep/snapshots': return trainingCampSleepSnapshots(sql, p, url);
           case '/api/health/status':
             requireScope(p, 'read');

@@ -6,6 +6,7 @@ import com.google.gson.JsonParser
 import dev.healthaibridge.Metric
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -28,7 +29,10 @@ interface SyncStore {
     suspend fun save(metric: Metric, state: SyncState)
 }
 fun interface SyncPageSource { suspend fun read(metric: Metric, cursor: String?): SyncPage }
-fun interface SyncTransport { suspend fun send(batch: PendingBatch): Receipt }
+fun interface SyncTransport {
+    suspend fun send(batch: PendingBatch): Receipt
+    suspend fun recoverReceipt(batch: PendingBatch, recordType: String): Receipt? = null
+}
 // Rechecked before reading and before EACH upload, including persisted pending batches.
 fun interface SyncConsent { suspend fun allowed(metric: Metric): Boolean }
 class ChangesExpired : Exception()
@@ -78,12 +82,15 @@ class SyncEngine(private val store: SyncStore, private val source: SyncPageSourc
     suspend fun run(metric: Metric, maxPages: Int = 20): SyncOutcome = store.mutex.withLock {
         require(maxPages > 0)
         val visited = mutableSetOf<String?>()
+        var checkSavedBatch = true
+        val recordType = checkNotNull(metric.recordClass.simpleName)
         try {
             repeat(maxPages) {
                 currentCoroutineContext().ensureActive()
                 if (!consent.allowed(metric)) return@withLock SyncOutcome.CONSENT_REQUIRED
                 var state = store.load(metric)
                 if (state.pending == null) {
+                    checkSavedBatch = false
                     check(visited.add(state.cursor)) { "Repeated sync cursor" }
                     val page = source.read(metric, state.cursor)
                     require(page.nextCursor.isNotBlank())
@@ -102,7 +109,26 @@ class SyncEngine(private val store: SyncStore, private val source: SyncPageSourc
                         currentCoroutineContext().ensureActive()
                         if (!consent.allowed(metric)) return@withLock SyncOutcome.CONSENT_REQUIRED
                     }
-                    val receipt = transport.send(batch)
+                    val savedReceipt = if (checkSavedBatch) {
+                        checkSavedBatch = false
+                        val recovered = transport.recoverReceipt(batch, recordType)
+                        if (recovered == null && !consent.allowed(metric)) return@withLock SyncOutcome.CONSENT_REQUIRED
+                        recovered
+                    } else null
+                    val receipt = savedReceipt ?: try {
+                        transport.send(batch)
+                    } catch (_: SyncExchangeInterrupted) {
+                        // The cloud may already have committed this exact batch.
+                        delay(1_000)
+                        if (!consent.allowed(metric)) return@withLock SyncOutcome.CONSENT_REQUIRED
+                        currentCoroutineContext().ensureActive()
+                        val recovered = transport.recoverReceipt(batch, recordType)
+                        if (recovered != null) recovered else {
+                            if (!consent.allowed(metric)) return@withLock SyncOutcome.CONSENT_REQUIRED
+                            currentCoroutineContext().ensureActive()
+                            transport.send(batch)
+                        }
+                    }
                     if (!receipt.committed || receipt.batchId != batch.batchId || receipt.sequence != batch.sequence || receipt.committedAt.isBlank())
                         throw SyncConflict()
                     val done = page.acknowledged + 1 == page.batches.size

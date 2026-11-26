@@ -23,7 +23,7 @@ $description.Text = "请输入刚才创建 Supabase 数据库时保存的密码�
 $form.Controls.Add($description)
 $destination = [Windows.Forms.Label]::new()
 $destination.SetBounds(22, 120, 496, 22)
-$destination.Text = '目标数据库：' + $ProjectRef + '（新加坡）'
+$destination.Text = '目标数据库：' + $ProjectRef
 $form.Controls.Add($destination)
 $passwordBox = [Windows.Forms.TextBox]::new()
 $passwordBox.SetBounds(22, 150, 496, 28)
@@ -51,6 +51,6 @@ try {
     $config.password = $null
     Write-Output 'PRIVATE_DATABASE_CONFIG_SAVED'
 } catch {
-    [Windows.Forms.MessageBox]::Show('未能保存加密配置。密码没有写入日志，请返回聊天告知助手。', '配置未完成') | Out-Null
+    [Windows.Forms.MessageBox]::Show('未能保存加密配置。请检查本机私有目录权限后重试。', '配置未完成') | Out-Null
     exit 1
 } finally { $passwordBox.Clear(); $form.Dispose() }
