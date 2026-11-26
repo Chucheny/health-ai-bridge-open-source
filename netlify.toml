@@ -1,0 +1,9 @@
+[build]
+  publish = "web"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# No database provisioning or migrations on deploy. Choose/provision the DB separately.
+# Never publish the project root, docs, Android exports, .env or database scripts.

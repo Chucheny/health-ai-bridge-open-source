@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "Health AI Bridge 网页采集助手",
+  "version": "0.3.0",
+  "description": "在用户已登录的华为训练营页面，选择日期读取睡眠或运动记录并保存本机。",
+  "permissions": ["activeTab", "scripting"],
+  "action": { "default_title": "Health AI Bridge 网页采集", "default_popup": "popup.html" },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'" }
+}

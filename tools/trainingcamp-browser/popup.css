@@ -1,0 +1,15 @@
+:root { color-scheme: light dark; font: 14px/1.6 system-ui, "Microsoft YaHei", sans-serif; }
+body { width: 350px; margin: 0; color: #172e3d; background: #f6faf9; }
+main { padding: 22px; }
+.eyebrow { margin: 0; font-size: 11px; letter-spacing: .12em; color: #287967; }
+h1 { margin: 4px 0 12px; font-size: 24px; }
+p { margin: 10px 0 16px; }
+label { display: block; margin: 12px 0; }
+input[type="date"],select { display: block; box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid #aebfba; border-radius: 7px; margin-top: 5px; background: #fff; color: #172e3d; font: inherit; }
+.confirm { display: flex; align-items: start; gap: 8px; font-size: 13px; }
+.confirm input { margin: 5px 0 0; }
+button { width: 100%; padding: 10px 12px; border: 0; border-radius: 8px; font: inherit; font-weight: 600; color: white; background: #176e5a; cursor: pointer; }
+button:disabled { background: #d8e2df; color: #60736c; cursor: default; }
+button:focus-visible,input:focus-visible,select:focus-visible { outline: 3px solid #e5a43f; outline-offset: 2px; }
+#status { padding: 10px; border-radius: 7px; background: #e9f1ee; font-size: 13px; overflow-wrap: anywhere; }
+.note { margin-bottom: 0; font-size: 12px; color: #53685f; }

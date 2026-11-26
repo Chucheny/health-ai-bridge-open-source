@@ -1,0 +1,20 @@
+[
+  {
+    "id": "synthetic-outdoor-run",
+    "startTime": 1767225600000,
+    "endTime": 1767227400000,
+    "timeZone": "+0800",
+    "activityType": 56,
+    "activeTime": 1800,
+    "activitySummary": {
+      "dataSummary": [{"fieldName": "synthetic_distance", "value": 2500, "unit": "source_unit"}],
+      "paceSummary": {"syntheticUnknownField": "keep-original"}
+    }
+  },
+  {
+    "id": "synthetic-unverified-type",
+    "startTime": "1767229200000",
+    "endTime": "1767231000000",
+    "activityType": "track-running-unverified"
+  }
+]
